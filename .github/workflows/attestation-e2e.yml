@@ -19,6 +19,8 @@ on:
     paths:
       - "src/glyphp_hermes/attestation.py"
       - ".github/workflows/attestation-e2e.yml"
+      - ".github/scripts/attestation_e2e.py"
+      - "scripts/record_sigstore_fixture.py"
 
 permissions:
   id-token: write

@@ -98,7 +98,17 @@ def keyless_sign(message: bytes) -> tuple[str, str, str]:
     ctx = SigningContext.from_trust_config(ClientTrustConfig.production())
     with ctx.signer(token) as signer:
         bundle = signer.sign_artifact(message)
-    return bundle.to_json(), token.federated_issuer, token.identity
+    # The identity that verification policies match is the certificate SAN
+    # (for GitHub Actions, the workflow-ref URI) — read it from the minted
+    # cert itself rather than guessing from token claims.
+    from cryptography import x509
+    from cryptography.x509.oid import ExtensionOID
+
+    san = bundle.signing_certificate.extensions.get_extension_for_oid(
+        ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+    ).value
+    identity = san.get_values_for_type(x509.UniformResourceIdentifier)[0]
+    return bundle.to_json(), token.federated_issuer, identity
 
 
 def fetch_trusted_root_json() -> str:
