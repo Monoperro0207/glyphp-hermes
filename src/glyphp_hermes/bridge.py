@@ -10,6 +10,7 @@ bridge is fully testable (and demo-able) outside a Hermes process.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -44,6 +45,36 @@ def sanitize_tool_name(alias: str, glyph_name: str) -> str:
     safe_alias = re.sub(r"[^a-zA-Z0-9_]", "_", alias)
     safe = re.sub(r"[^a-zA-Z0-9_]", "_", glyph_name)
     return f"glyph_{safe_alias}_{safe}"[:_TOOL_NAME_MAX]
+
+
+def assign_tool_names(alias: str, glyph_names: list[str]) -> dict[str, str]:
+    """Map glyph name → unique sanitized tool name for one lexicon.
+
+    Sanitization is lossy (``a-b`` and ``a.b`` both become ``a_b``; long
+    names truncate), so two glyphs can collide and one would silently shadow
+    the other — the model would see one schema and execute another tool.
+    When a collision is detected, EVERY member of the colliding group gets a
+    stable suffix derived from its original glyph name, so the result does
+    not depend on lexicon order. Non-colliding names are unchanged.
+    """
+    plain: dict[str, list[str]] = {}
+    for glyph_name in glyph_names:
+        plain.setdefault(sanitize_tool_name(alias, glyph_name), []).append(glyph_name)
+
+    out: dict[str, str] = {}
+    for tool_name, members in plain.items():
+        if len(members) == 1:
+            out[members[0]] = tool_name
+            continue
+        logger.warning(
+            "[%s] glyphs %s sanitize to the same tool name %r; disambiguating with suffixes",
+            alias, members, tool_name,
+        )
+        for glyph_name in members:
+            suffix = "_" + hashlib.sha256(glyph_name.encode("utf-8")).hexdigest()[:8]
+            base = sanitize_tool_name(alias, glyph_name)[: _TOOL_NAME_MAX - len(suffix)]
+            out[glyph_name] = base + suffix
+    return out
 
 
 def card_to_schema(tool_name: str, alias: str, card: dict) -> dict:
@@ -159,10 +190,11 @@ class ServerBridge:
             self.last_report = report
             return report
 
+        names = assign_tool_names(self.cfg.alias, [e.get("name", "") for e in lexicon])
         bindings: dict[str, ToolBinding] = {}
         for entry in lexicon:
             glyph_name = entry.get("name", "")
-            tool_name = sanitize_tool_name(self.cfg.alias, glyph_name)
+            tool_name = names[glyph_name]
             try:
                 card = self.client.get_card(glyph_name, depth="rich")
             except (httpx.HTTPError, OSError) as exc:
@@ -339,11 +371,11 @@ class ServerBridge:
         )
 
     def _seal(self, binding: ToolBinding, args: dict, envelope: dict) -> str:
+        pinned = self.trust.store.get(binding.glyph_name)
+        pinned_card = pinned.card if pinned else binding.card
         verified = True
         checks: dict = {}
         if self.cfg.receipts.verify:
-            pinned = self.trust.store.get(binding.glyph_name)
-            pinned_card = pinned.card if pinned else binding.card
             verified, checks = check_envelope(envelope, pinned_card)
 
         self.audit.record(
@@ -354,6 +386,7 @@ class ServerBridge:
             verified=verified,
             checks=checks,
             input_value=args,
+            pinned_public_key=pinned_card.get("publicKey"),
         )
 
         receipt = envelope.get("receipt") or {}

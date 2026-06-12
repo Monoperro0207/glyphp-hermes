@@ -1,6 +1,7 @@
 """/glyph slash command surface + the `hermes glyph` CLI."""
 from __future__ import annotations
 
+import argparse
 import json
 
 import pytest
@@ -149,3 +150,19 @@ def test_cli_audit_verify(server, capsys):
 def test_cli_bad_json_input(server, capsys):
     cli.main(["add", "demo", server.url])
     assert cli.main(["call", "demo", "echo", "{not json"]) == 2
+
+
+def test_hermes_handle_raises_on_blocked_call(server, capsys):
+    # Hermes' dispatcher discards args.func()'s return value, so a blocked
+    # call would exit 0; hermes_handle turns nonzero into SystemExit so
+    # scripts and CI see the failure.
+    cli.main(["add", "demo", server.url, "--tofu-max-risk", "danger"])
+    parser = argparse.ArgumentParser()
+    cli.setup(parser)
+    blocked = parser.parse_args(["call", "demo", "notes.delete", '{"id": 1}'])
+    with pytest.raises(SystemExit) as excinfo:
+        cli.hermes_handle(blocked)
+    assert excinfo.value.code == 1
+
+    ok = parser.parse_args(["call", "demo", "echo", "{}"])
+    assert cli.hermes_handle(ok) == 0  # success must NOT raise

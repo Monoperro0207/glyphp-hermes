@@ -229,7 +229,9 @@ def _gateway_confirmation(
     if caps.get_session_key is not None:
         try:
             session_key = caps.get_session_key()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001  # nosec B110 — deliberate fail-soft:
+            # a broken session lookup must not block the approval flow; the
+            # "default" session key keeps the confirmation one-shot and bound.
             pass
 
     approval_data = {

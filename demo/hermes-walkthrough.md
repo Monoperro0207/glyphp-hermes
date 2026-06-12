@@ -41,11 +41,11 @@ cd demo && npm install && npm run server
 ```bash
 hermes glyph add demo http://127.0.0.1:3100 --tofu-max-risk caution
 hermes glyph sync
-#   [demo] 4 tools (3 callable, 1 blocked)
+#   [demo] 4 tools (2 callable, 2 blocked)
 #   glyph_demo_notes_list: callable
 #   glyph_demo_notes_add: callable
-#   glyph_demo_notes_delete: TRUST_REQUIRED
-#   glyph_demo_notes_export: callable
+#   glyph_demo_notes_delete: TRUST_REQUIRED   (danger > tofu-max-risk caution)
+#   glyph_demo_notes_export: TRUST_REQUIRED   (danger > tofu-max-risk caution)
 
 # Direct call through the full trust chain — still no LLM:
 hermes glyph call demo notes.list '{}'

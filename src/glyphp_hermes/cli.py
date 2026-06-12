@@ -232,6 +232,17 @@ def _call(args: argparse.Namespace) -> int:
         bridge.close()
 
 
+def hermes_handle(args: argparse.Namespace, **kwargs: Any) -> int:
+    """``handle`` for the Hermes CLI dispatcher, which discards return values
+    (hermes_cli/main.py runs ``args.func(args)`` and exits 0 regardless).
+    Raising SystemExit is the only way a blocked call reaches the shell as a
+    nonzero exit code instead of a silent success."""
+    code = handle(args, **kwargs)
+    if code:
+        raise SystemExit(code)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="glyphp-hermes")
     setup(parser)

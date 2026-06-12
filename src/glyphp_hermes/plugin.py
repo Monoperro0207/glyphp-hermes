@@ -55,6 +55,9 @@ class GlyphRuntime:
         self.config = config or GlyphConfig.load()
         self.bridges: dict[str, ServerBridge] = {}
         self.registered_tools: set[str] = set()
+        # Schema actually handed to Hermes per tool — reconcile() compares
+        # against this to catch kept tools whose card/schema changed.
+        self.registered_schemas: dict[str, dict] = {}
         self._lock = threading.Lock()
         self.confirmer = _hermes.request_user_confirmation
 
@@ -112,6 +115,7 @@ class GlyphRuntime:
                     emoji="🔏",
                 )
                 self.registered_tools.add(tool_name)
+                self.registered_schemas[tool_name] = schema
                 count += 1
             except Exception:  # noqa: BLE001 — a name clash must not abort the rest
                 logger.exception("could not register %s", tool_name)
@@ -131,27 +135,49 @@ class GlyphRuntime:
             current = set(self.all_bindings().keys())
             added = current - self.registered_tools
             removed = self.registered_tools - current
+            kept = current & self.registered_tools
 
             results: dict[str, Any] = {
                 "added": [],
+                "updated": [],
                 "removed": [],
-                "kept": len(current & self.registered_tools),
+                "kept": len(kept),
             }
             for tool_name in sorted(added):
                 bridge, binding = self.all_bindings()[tool_name]
+                schema = card_to_schema(tool_name, binding.alias, binding.card)
                 ok = _hermes.register_tool_dynamic(
                     name=tool_name,
                     toolset=f"glyph-{binding.alias}",
-                    schema=card_to_schema(tool_name, binding.alias, binding.card),
+                    schema=schema,
                     handler=_safe_callable(bridge.make_handler(tool_name)),
                     description=binding.card.get("intent", ""),
                 )
                 if ok:
                     self.registered_tools.add(tool_name)
+                    self.registered_schemas[tool_name] = schema
                     results["added"].append(tool_name)
+            # Kept tools whose card changed: re-register (override) so the
+            # schema the model sees matches the card the handler enforces.
+            for tool_name in sorted(kept):
+                bridge, binding = self.all_bindings()[tool_name]
+                schema = card_to_schema(tool_name, binding.alias, binding.card)
+                if schema == self.registered_schemas.get(tool_name):
+                    continue
+                ok = _hermes.register_tool_dynamic(
+                    name=tool_name,
+                    toolset=f"glyph-{binding.alias}",
+                    schema=schema,
+                    handler=_safe_callable(bridge.make_handler(tool_name)),
+                    description=binding.card.get("intent", ""),
+                )
+                if ok:
+                    self.registered_schemas[tool_name] = schema
+                    results["updated"].append(tool_name)
             for tool_name in sorted(removed):
                 if _hermes.deregister_tool(tool_name):
                     self.registered_tools.discard(tool_name)
+                    self.registered_schemas.pop(tool_name, None)
                     results["removed"].append(tool_name)
             return results
 
@@ -212,7 +238,7 @@ def register(ctx: Any) -> None:
             "glyph",
             help="Manage Glyph Protocol servers (add, sync, trust, audit, call)",
             setup_fn=cli.setup,
-            handler_fn=_safe_callable(cli.handle),
+            handler_fn=_safe_callable(cli.hermes_handle),
         )
     except Exception:  # noqa: BLE001
         logger.exception("could not register hermes glyph CLI command")

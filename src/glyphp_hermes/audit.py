@@ -17,18 +17,28 @@ from glyph_protocol import canonical_hash, verify_receipt
 def check_envelope(envelope: dict, pinned_card: Optional[dict]) -> tuple[bool, dict]:
     """Verify a SealedEnvelope against the pinned card.
 
-    Three checks, mirroring what a security-conscious Glyph consumer does:
-      1. the receipt signature verifies under the server key it names,
-      2. the receipt is bound to the card we approved (glyphId == pin id),
-      3. the receipt's outputHash matches the payload we actually received.
+    Five checks, mirroring GlyphClient.verifyReceipt in the official TS
+    client (packages/client/src/index.ts):
+      1. the receipt is signed by the PINNED key — not whatever key the
+         receipt itself names (a self-chosen key proves nothing),
+      2. the receipt signature verifies under that key,
+      3. the receipt is bound to the card we approved (glyphId == pin id),
+      4. the receipt's outputHash matches the payload we actually received,
+      5. the receipt's inspectionHash matches the inspection we received.
     """
     receipt = envelope.get("receipt") or {}
+    inspection = envelope.get("inspection")
     checks = {
+        "keyMatchesPin": pinned_card is not None
+        and bool(receipt.get("serverPublicKey"))
+        and receipt.get("serverPublicKey") == pinned_card.get("publicKey"),
         "signature": bool(receipt) and verify_receipt(receipt),
         "glyphIdMatchesPin": pinned_card is not None
         and receipt.get("glyphId") == pinned_card.get("id"),
         "outputHashMatches": receipt.get("outputHash")
         == canonical_hash(envelope.get("payload")),
+        "inspectionHashMatches": receipt.get("inspectionHash")
+        == canonical_hash(inspection if inspection is not None else {}),
     }
     return all(checks.values()), checks
 
@@ -51,6 +61,7 @@ class ReceiptAuditLog:
         verified: bool,
         checks: dict,
         input_value: Any,
+        pinned_public_key: Optional[str] = None,
     ) -> dict:
         receipt = envelope.get("receipt") or {}
         entry = {
@@ -63,6 +74,9 @@ class ReceiptAuditLog:
             "checks": checks,
             "inputHash": canonical_hash(input_value),
             "inspection": envelope.get("inspection"),
+            # The key we trusted at call time — verify_all() re-checks the
+            # receipt against THIS, not against the receipt's own key.
+            "pinnedPublicKey": pinned_public_key,
             "receipt": receipt,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,7 +99,12 @@ class ReceiptAuditLog:
         return out
 
     def verify_all(self) -> dict:
-        """Re-run receipt signature verification over the entire log."""
+        """Re-run receipt verification over the entire log.
+
+        A receipt only counts as ok when it is signed by the key that was
+        pinned at call time (recorded per entry) — a receipt that verifies
+        under some other self-chosen key is a forgery, not evidence.
+        """
         total = ok = bad = unparseable = 0
         failures: list[dict] = []
         if not self.path.exists():
@@ -100,7 +119,9 @@ class ReceiptAuditLog:
                 unparseable += 1
                 continue
             receipt = entry.get("receipt") or {}
-            if receipt and verify_receipt(receipt):
+            pinned_key = entry.get("pinnedPublicKey")
+            key_ok = bool(pinned_key) and receipt.get("serverPublicKey") == pinned_key
+            if receipt and key_ok and verify_receipt(receipt):
                 ok += 1
             else:
                 bad += 1

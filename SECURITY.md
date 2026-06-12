@@ -26,9 +26,12 @@ it defends:
 - **Confirmation gates**: `requiresConfirmation` tools cannot be called
   without a fresh single-use token bound to the exact input; approvals are
   one-shot and never session-persisted.
-- **Receipt integrity**: every result's signed receipt is verified
-  (signature, binding to the pinned card, payload hash). A payload tampered
-  in transit is withheld (`RECEIPT_INVALID`) under the default policy.
+- **Receipt integrity**: every result's signed receipt is verified with
+  five checks — signed by the **pinned** key (a self-chosen key proves
+  nothing), signature, binding to the pinned card, payload hash, and
+  inspection hash. A payload or inspection tampered in transit, or a receipt
+  signed by a non-pinned key, is withheld (`RECEIPT_INVALID`) under the
+  default policy.
 - **Fail-closed degradation**: when an approval channel is unavailable
   (cron, missing upstream API), confirmation-gated calls return
   `CONFIRMATION_UNAVAILABLE` — never auto-approve.

@@ -340,3 +340,79 @@ def test_sigstore_offline_replay_other_card_invalid(priv, fixture_card, fixture_
     result = fixture_verifier.verify(other)
     assert result.valid is False
     assert "subject digest" in result.error
+
+
+# ---------------------------------------------------------------------------
+# default_registry must ACTIVATE the sigstore extra when it is installed —
+# a default bridge that always returns ATTESTATION_UNTRUSTED with a valid
+# bundle would make the advertised feature unusable.
+# ---------------------------------------------------------------------------
+
+sigstore_installed = pytest.mark.skipif(
+    not _sigstore_installed(), reason="sigstore extra not installed"
+)
+
+
+@sigstore_installed
+def test_default_registry_activates_sigstore_backend():
+    registry = default_registry()
+    verifier = registry.get("glyph-keyless-v1")
+    assert isinstance(verifier.backend, SigstoreBackend)
+
+
+def test_default_registry_explicit_backend_wins():
+    class Stub:
+        def verify_bundle(self, bundle, card):
+            return {"trusted": True, "error": None}
+
+    stub = Stub()
+    registry = default_registry(backend=stub)
+    assert registry.get("glyph-keyless-v1").backend is stub
+
+
+@offline_fixture
+def test_default_bridge_registry_verifies_keyless_attestation(tmp_path, fixture_card, monkeypatch):
+    """The attestation gate as a DEFAULT bridge runs it: build a ServerBridge
+    without injecting a registry, then push the recorded fixture card through
+    enforce_policy with the registry the bridge constructed itself — it must
+    come back allowed, not ATTESTATION_UNTRUSTED. The trusted root is pinned
+    only to keep the crypto offline; the registry/backend wiring is the
+    default activation under test.
+
+    (The trust gate is exercised separately: a glyph-keyless-v1 bundle binds
+    subjectDigest to the card id, while the id canonically includes the
+    attestation slot — RFC-0007's producers attach the bundle post-id, so
+    such cards do not pass verify_glyph content integrity. Spec-level issue,
+    tracked upstream in the protocol repo.)"""
+    import glyphp_hermes.attestation as attestation_mod
+
+    from .conftest import ScriptedConfirmer, make_bridge
+    from .fake_server import FakeGlyphServer, default_glyphs
+    from glyphp_hermes.config import AttestationPolicy
+
+    monkeypatch.setattr(
+        attestation_mod,
+        "default_backend",
+        lambda: SigstoreBackend(trusted_root=FIXTURE_DIR / "trusted_root.json"),
+    )
+    ident = json.loads((FIXTURE_DIR / "identity.json").read_text())
+
+    with FakeGlyphServer(default_glyphs()) as server:
+        bridge = make_bridge(
+            server,
+            tmp_path,
+            ScriptedConfirmer(),
+            attestation=AttestationPolicy(
+                require="all",
+                issuers=(ident["issuer"],),
+                identities=(ident["identity"],),
+            ),
+        )
+        try:
+            allowed, code, result = enforce_policy(
+                fixture_card, "all", bridge.attestation_registry
+            )
+            assert allowed, f"{code}: {result.error if result else ''}"
+            assert result is not None and result.trusted is True
+        finally:
+            bridge.close()

@@ -26,11 +26,13 @@ access can do.
 1. **PyPI trusted publisher** — one-time, ~2 minutes, see
    [RELEASING.md](../RELEASING.md). Until then, pushing a tag builds but the
    publish job fails cleanly.
-2. **Upstream reports to NousResearch** — two ready-to-paste drafts in
+2. **Upstream reports to NousResearch** — three ready-to-paste drafts in
    [docs/upstream/](upstream/):
    - [`hermes plugins enable` doesn't see entry-point plugins](upstream/issue-plugins-enable-entrypoints.md)
      (bug + proposed fix — also the natural way to put this plugin on Nous'
      radar);
+   - [CLI dispatcher discards subcommand exit codes](upstream/issue-cli-exit-codes.md)
+     (the plugin works around it by raising SystemExit);
    - [public blocking-approval API for plugins](upstream/proposal-public-approval-api.md).
 3. **Optional**: branch protection on `main` (require CI), repo topics
    (`hermes-agent`, `glyph-protocol`, `ai-agents`, `tool-use`, `security`)

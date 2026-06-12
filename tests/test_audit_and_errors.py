@@ -37,9 +37,11 @@ def test_check_envelope_all_green(priv):
     ok, checks = check_envelope(envelope, card)
     assert ok is True
     assert checks == {
+        "keyMatchesPin": True,
         "signature": True,
         "glyphIdMatchesPin": True,
         "outputHashMatches": True,
+        "inspectionHashMatches": True,
     }
 
 
@@ -69,6 +71,55 @@ def test_check_envelope_payload_substitution(priv):
     assert checks["signature"] is True  # the receipt itself is intact
 
 
+def test_check_envelope_key_substitution(priv):
+    # Adversarial: a receipt signed by a key the attacker controls, naming
+    # the pinned card's glyphId and a matching outputHash. Self-consistent
+    # (signature verifies under its own key) but NOT signed by the pin.
+    card = build_card(priv)
+    attacker = Ed25519PrivateKey.generate()
+    payload = {"result": "forged"}
+    forged = build_receipt(
+        attacker,
+        glyph_id=card["id"],
+        glyph_name=card["name"],
+        input_hash=canonical_hash({}),
+        output_hash=canonical_hash(payload),
+    )
+    envelope = {
+        "payload": payload,
+        "receipt": forged,
+        "inspection": {"modified": False, "findings": []},
+    }
+    ok, checks = check_envelope(envelope, card)
+    assert ok is False
+    assert checks["keyMatchesPin"] is False
+    assert checks["signature"] is True  # self-consistent, hence the pin check
+
+
+def test_check_envelope_inspection_substitution(priv):
+    # Adversarial: swap the inspection for one hiding a critical finding,
+    # leaving the signed receipt untouched.
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42})
+    envelope["inspection"] = {"modified": True, "findings": []}
+    ok, checks = check_envelope(envelope, card)
+    assert ok is False and checks["inspectionHashMatches"] is False
+    assert checks["signature"] is True
+
+
+def test_check_envelope_missing_inspection_hash_fails_closed(priv):
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42})
+    receipt = {k: v for k, v in envelope["receipt"].items() if k != "inspectionHash"}
+    # Re-sign so only the missing field (not the signature) is under test.
+    from .cardlab import sign
+    base = {k: v for k, v in receipt.items() if k != "signature"}
+    receipt = {**base, "signature": sign(priv, canonical_hash(base))}
+    envelope["receipt"] = receipt
+    ok, checks = check_envelope(envelope, card)
+    assert ok is False and checks["inspectionHashMatches"] is False
+
+
 def test_audit_log_record_and_tail(tmp_path, priv):
     log = ReceiptAuditLog(tmp_path / "audit" / "demo.jsonl")
     card = build_card(priv)
@@ -83,6 +134,7 @@ def test_audit_log_record_and_tail(tmp_path, priv):
             verified=ok,
             checks=checks,
             input_value={"i": i},
+            pinned_public_key=card["publicKey"],
         )
     entries = log.tail(2)
     assert len(entries) == 2
@@ -102,10 +154,27 @@ def test_audit_verify_all_detects_tamper(tmp_path, priv):
         log.record(
             alias="demo", glyph_name="echo", tool_name="t",
             envelope=envelope, verified=ok, checks=checks, input_value={},
+            pinned_public_key=card["publicKey"],
         )
     report = log.verify_all()
     assert report["total"] == 2 and report["ok"] == 1 and report["bad"] == 1
     assert report["failures"][0]["glyphName"] == "echo"
+
+
+def test_audit_verify_all_rejects_foreign_key(tmp_path, priv):
+    # An entry whose receipt verifies under its OWN key but was not signed
+    # by the key pinned at call time must count as bad, not ok.
+    log = ReceiptAuditLog(tmp_path / "demo.jsonl")
+    card = build_card(priv)
+    attacker = Ed25519PrivateKey.generate()
+    envelope = _envelope(attacker, card, {"ok": 1})
+    log.record(
+        alias="demo", glyph_name="echo", tool_name="t",
+        envelope=envelope, verified=False, checks={}, input_value={},
+        pinned_public_key=card["publicKey"],
+    )
+    report = log.verify_all()
+    assert report["total"] == 1 and report["ok"] == 0 and report["bad"] == 1
 
 
 def test_audit_empty_log(tmp_path):

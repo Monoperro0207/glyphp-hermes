@@ -70,6 +70,33 @@ def test_trust_after_change_unblocks(registered, server):
     assert out["ok"] is True
 
 
+def test_changed_schema_re_registers_kept_tool(registered, server):
+    # A kept tool whose input schema changed must be re-registered: the
+    # schema Hermes shows the model has to match the card the handler
+    # enforces, or the model fills arguments for a tool it is not calling.
+    ctx, runtime = registered
+    new_input = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}, "priority": {"type": "integer"}},
+        "required": ["text", "priority"],
+    }
+    server.tamper_card("notes.add", input_schema=new_input)
+    report = runtime.reconcile()
+    assert "glyph_demo_notes_add" in report["updated"]
+    registered_schema = ctx.registry.tools["glyph_demo_notes_add"]["schema"]
+    assert registered_schema["parameters"] == new_input
+    # The changed card is still gated until re-trusted — only the schema
+    # the model sees was refreshed, not the trust decision.
+    out = json.loads(ctx.registry.dispatch("glyph_demo_notes_add", {"text": "x", "priority": 1}))
+    assert out["ok"] is False and out["error"]["code"] == "CARD_CHANGED"
+
+
+def test_unchanged_schema_not_re_registered(registered):
+    _ctx, runtime = registered
+    report = runtime.reconcile()
+    assert report["updated"] == []
+
+
 def test_new_tool_appears_mid_session(registered, server):
     ctx, _ = registered
     server.add_glyph(FakeGlyph("weather", intent="Forecast", risk_tier="safe"))

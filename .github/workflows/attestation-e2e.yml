@@ -13,7 +13,7 @@ name: attestation-e2e
 
 on:
   schedule:
-    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
+    - cron: "0 7 * * 1"  # weekly, Monday 07:00 UTC
   workflow_dispatch:
   push:
     paths:
@@ -24,7 +24,7 @@ on:
 
 permissions:
   id-token: write
-  contents: write # to commit the recorded offline fixture (once)
+  contents: write  # to commit the recorded offline fixture (once)
 
 jobs:
   e2e:

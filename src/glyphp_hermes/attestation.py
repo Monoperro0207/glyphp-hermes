@@ -270,12 +270,26 @@ class SigstoreBackend:
 # ---------------------------------------------------------------------------
 
 
+def default_backend() -> Optional[KeylessBackend]:
+    """SigstoreBackend when the optional ``sigstore`` extra is installed,
+    else None. Installing ``glyphp-hermes[sigstore]`` is what activates real
+    keyless verification — without this, a default bridge would always fall
+    back to ``trusted=False`` and ATTESTATION_UNTRUSTED."""
+    try:
+        import sigstore  # noqa: F401
+    except ImportError:
+        return None
+    return SigstoreBackend()
+
+
 def default_registry(
     *,
     issuers: tuple[str, ...] | list[str] | None = None,
     identities: tuple[str, ...] | list[str] | None = None,
     backend: Optional[KeylessBackend] = None,
 ) -> AttestationVerifierRegistry:
+    if backend is None:
+        backend = default_backend()
     registry = AttestationVerifierRegistry()
     registry.register(DigestVerifier())
     registry.register(KeylessVerifier(issuers=issuers, identities=identities, backend=backend))

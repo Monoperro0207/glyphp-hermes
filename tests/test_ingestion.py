@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from glyphp_hermes.bridge import card_to_schema, sanitize_tool_name
+from glyphp_hermes.bridge import assign_tool_names, card_to_schema, sanitize_tool_name
 from glyphp_hermes.config import AttestationPolicy, TofuPolicy
 
 from .conftest import make_bridge
@@ -14,6 +14,56 @@ def test_sanitize_tool_name():
     assert sanitize_tool_name("demo", "weird name/x") == "glyph_demo_weird_name_x"
     assert sanitize_tool_name("demo-attested", "notes.export") == "glyph_demo_attested_notes_export"
     assert len(sanitize_tool_name("demo", "x" * 200)) <= 64
+
+
+def test_assign_tool_names_no_collision_keeps_plain_names():
+    names = assign_tool_names("demo", ["notes.add", "echo"])
+    assert names == {
+        "notes.add": "glyph_demo_notes_add",
+        "echo": "glyph_demo_echo",
+    }
+
+
+def test_assign_tool_names_collision_gets_stable_suffixes():
+    # a-b and a.b both sanitize to a_b: BOTH get a suffix derived from the
+    # original name, so the mapping does not depend on lexicon order.
+    forward = assign_tool_names("demo", ["a-b", "a.b"])
+    backward = assign_tool_names("demo", ["a.b", "a-b"])
+    assert forward == backward
+    assert forward["a-b"] != forward["a.b"]
+    assert all(name.startswith("glyph_demo_a_b_") for name in forward.values())
+    assert all(len(name) <= 64 for name in forward.values())
+
+
+def test_assign_tool_names_truncation_collision():
+    long_a = "x" * 80 + "1"
+    long_b = "x" * 80 + "2"
+    assert sanitize_tool_name("demo", long_a) == sanitize_tool_name("demo", long_b)
+    names = assign_tool_names("demo", [long_a, long_b])
+    assert names[long_a] != names[long_b]
+    assert all(len(name) <= 64 for name in names.values())
+
+
+def test_sync_colliding_glyphs_both_callable(tmp_path, confirmer):
+    from .fake_server import FakeGlyph, FakeGlyphServer
+
+    glyphs = [
+        FakeGlyph("a-b", intent="dash", risk_tier="safe", handler=lambda inp: {"via": "dash"}),
+        FakeGlyph("a.b", intent="dot", risk_tier="safe", handler=lambda inp: {"via": "dot"}),
+    ]
+    with FakeGlyphServer(glyphs) as server:
+        bridge = make_bridge(server, tmp_path, confirmer)
+        try:
+            report = bridge.sync()
+            assert report.ok and len(report.bindings) == 2
+            by_glyph = {b.glyph_name: b for b in report.bindings}
+            assert by_glyph["a-b"].tool_name != by_glyph["a.b"].tool_name
+            for glyph_name, expected in (("a-b", "dash"), ("a.b", "dot")):
+                out = json.loads(bridge.make_handler(by_glyph[glyph_name].tool_name)({}))
+                assert out["ok"] is True
+                assert out["result"] == {"via": expected}
+        finally:
+            bridge.close()
 
 
 def test_sync_builds_bindings_with_schemas(bridge):

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # PEP 639 SPDX license expression
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,14 +7,13 @@ name = "glyphp-hermes"
 version = "0.1.0"
 description = "Native Glyph Protocol integration for hermes-agent: signed tool cards, pinning/TOFU, confirmation gates, verified receipts."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.11,<3.14"
 authors = [{ name = "MonoPerro" }]
 keywords = ["glyph", "hermes", "agent", "tools", "trust", "ed25519", "receipts"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",

@@ -22,10 +22,13 @@ def test_successful_call_appends_verified_audit_entry(bridge, tmp_path):
     assert entry["verified"] is True
     assert entry["glyphName"] == "echo"
     assert entry["checks"] == {
+        "keyMatchesPin": True,
         "signature": True,
         "glyphIdMatchesPin": True,
         "outputHashMatches": True,
+        "inspectionHashMatches": True,
     }
+    assert entry["pinnedPublicKey"] == entry["receipt"]["serverPublicKey"]
     assert entry["receipt"]["outputHash"] == out["receipt"]["outputHash"]
 
 
