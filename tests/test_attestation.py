@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -11,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from glyphp_hermes.attestation import (
     DigestVerifier,
     KeylessVerifier,
+    SigstoreBackend,
     default_registry,
     enforce_policy,
     matches_any,
@@ -256,8 +258,6 @@ def test_policy_unknown_attestation_type_blocked(priv):
 
 def test_sigstore_backend_without_extra_fails_closed(priv):
     """Without the sigstore package the backend reports untrusted, never raises."""
-    from glyphp_hermes.attestation import SigstoreBackend
-
     card = attach_keyless(priv)
     verifier = KeylessVerifier(backend=SigstoreBackend())
     result = verifier.verify(card)
@@ -266,3 +266,77 @@ def test_sigstore_backend_without_extra_fails_closed(priv):
     # Either sigstore is not installed (error mentions the extra) or it is
     # installed and the empty envelope fails — both are fail-closed.
     assert result.error
+
+
+# ---------------------------------------------------------------------------
+# SigstoreBackend — offline accept path against the recorded fixture
+# (real keyless bundle + pinned trusted root, recorded by the attestation-e2e
+# workflow via scripts/record_sigstore_fixture.py; no network involved here)
+# ---------------------------------------------------------------------------
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "sigstore"
+
+
+def _sigstore_installed() -> bool:
+    try:
+        import sigstore  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+offline_fixture = pytest.mark.skipif(
+    not (FIXTURE_DIR / "card.json").exists() or not _sigstore_installed(),
+    reason="offline sigstore fixture not recorded yet (attestation-e2e workflow records it) "
+    "or sigstore extra not installed",
+)
+
+
+@pytest.fixture
+def fixture_card() -> dict:
+    return json.loads((FIXTURE_DIR / "card.json").read_text())
+
+
+@pytest.fixture
+def fixture_verifier() -> KeylessVerifier:
+    ident = json.loads((FIXTURE_DIR / "identity.json").read_text())
+    return KeylessVerifier(
+        issuers=[ident["issuer"]],
+        identities=[ident["identity"]],
+        backend=SigstoreBackend(trusted_root=FIXTURE_DIR / "trusted_root.json"),
+    )
+
+
+@offline_fixture
+def test_sigstore_offline_accept(fixture_card, fixture_verifier):
+    result = fixture_verifier.verify(fixture_card)
+    assert result.valid is True
+    assert result.trusted is True, result.error
+
+
+@offline_fixture
+def test_sigstore_offline_tampered_signature_untrusted(fixture_card, fixture_verifier):
+    bundle = json.loads(base64.b64decode(fixture_card["attestation"]["payload"]))
+    envelope = json.loads(bundle["signingCertificate"])
+    sig = bytearray(base64.b64decode(envelope["messageSignature"]["signature"]))
+    sig[0] ^= 0xFF
+    envelope["messageSignature"]["signature"] = base64.b64encode(bytes(sig)).decode()
+    bundle["signingCertificate"] = json.dumps(envelope)
+    card = dict(fixture_card)
+    card["attestation"] = {
+        "type": "glyph-keyless-v1",
+        "payload": base64.b64encode(json.dumps(bundle).encode()).decode(),
+    }
+    result = fixture_verifier.verify(card)
+    assert result.valid is True  # structure and card binding intact
+    assert result.trusted is False  # crypto check fails
+
+
+@offline_fixture
+def test_sigstore_offline_replay_other_card_invalid(priv, fixture_card, fixture_verifier):
+    other = build_card(priv)
+    other["attestation"] = fixture_card["attestation"]
+    result = fixture_verifier.verify(other)
+    assert result.valid is False
+    assert "subject digest" in result.error

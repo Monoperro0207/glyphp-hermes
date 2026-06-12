@@ -58,7 +58,25 @@ def main() -> int:
         help="persistent HERMES_HOME (use the same dir across runs to demo --tamper)",
     )
     parser.add_argument("--keep-home", action="store_true", help="use the real HERMES_HOME")
+    parser.add_argument(
+        "--slow", action="store_true", help="print line by line (for screen recordings)"
+    )
     args = parser.parse_args()
+
+    if args.slow:
+        import time
+
+        original_write = sys.stdout.write
+
+        def slow_write(s: str) -> int:
+            for chunk in s.splitlines(keepends=True):
+                original_write(chunk)
+                sys.stdout.flush()
+                if chunk.endswith("\n"):
+                    time.sleep(0.12)
+            return len(s)
+
+        sys.stdout.write = slow_write  # type: ignore[method-assign]
 
     if args.home:
         os.environ["HERMES_HOME"] = args.home

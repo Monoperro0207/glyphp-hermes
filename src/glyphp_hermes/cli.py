@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Any, Callable, Optional
 
 from .audit import ReceiptAuditLog
 from .bridge import ServerBridge
@@ -57,7 +58,7 @@ def setup(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def handle(args, **_kwargs) -> int:
+def handle(args: argparse.Namespace, **_kwargs: Any) -> int:
     cmd = getattr(args, "glyph_cmd", None)
     try:
         if cmd == "add":
@@ -81,7 +82,7 @@ def handle(args, **_kwargs) -> int:
     return 1
 
 
-def _add(args) -> int:
+def _add(args: argparse.Namespace) -> int:
     cfg = GlyphConfig.load()
     cfg.add_server(
         ServerConfig(
@@ -97,7 +98,7 @@ def _add(args) -> int:
     return 0
 
 
-def _remove(args) -> int:
+def _remove(args: argparse.Namespace) -> int:
     cfg = GlyphConfig.load()
     if not cfg.remove_server(args.alias):
         print(f"no server named {args.alias!r}", file=sys.stderr)
@@ -121,7 +122,9 @@ def _list() -> int:
     return 0
 
 
-def _bridge_for(alias: str, *, confirmer=None) -> ServerBridge | None:
+def _bridge_for(
+    alias: str, *, confirmer: Optional[Callable[[str, str, str], str]] = None
+) -> ServerBridge | None:
     cfg = GlyphConfig.load()
     server_cfg = cfg.get_server(alias)
     if server_cfg is None:
@@ -134,7 +137,7 @@ def _bridge_for(alias: str, *, confirmer=None) -> ServerBridge | None:
     )
 
 
-def _sync(_args) -> int:
+def _sync(_args: Optional[argparse.Namespace]) -> int:
     cfg = GlyphConfig.load()
     if not cfg.servers:
         print("no servers configured")
@@ -157,7 +160,7 @@ def _sync(_args) -> int:
     return exit_code
 
 
-def _trust(args) -> int:
+def _trust(args: argparse.Namespace) -> int:
     bridge = _bridge_for(args.alias)
     if bridge is None:
         return 1
@@ -172,7 +175,7 @@ def _trust(args) -> int:
         bridge.close()
 
 
-def _audit(args) -> int:
+def _audit(args: argparse.Namespace) -> int:
     cfg = GlyphConfig.load()
     servers = [s for s in cfg.servers if args.alias in (None, s.alias)]
     if not servers:
@@ -201,7 +204,7 @@ def _audit(args) -> int:
     return exit_code
 
 
-def _call(args) -> int:
+def _call(args: argparse.Namespace) -> int:
     try:
         input_value = json.loads(args.input_json)
     except json.JSONDecodeError as exc:

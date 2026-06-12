@@ -27,8 +27,10 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8", "cryptography>=42"]
-sigstore = ["sigstore>=3.0"]
-dev = ["pytest>=8", "cryptography>=42", "ruff>=0.4"]
+# Pinned to the 4.x API surface SigstoreBackend uses
+# (sigstore.models.TrustedRoot / ClientTrustConfig).
+sigstore = ["sigstore>=4,<5"]
+dev = ["pytest>=8", "cryptography>=42", "ruff>=0.4", "mypy>=1.10", "types-PyYAML"]
 
 [project.urls]
 Homepage = "https://github.com/Monoperro0207/glyphp-hermes"
@@ -56,3 +58,24 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# Hermes is feature-detected at runtime; sigstore is an optional extra;
+# glyph-protocol ships no py.typed marker yet.
+module = [
+  "tools.*",
+  "hermes_cli.*",
+  "model_tools",
+  "sigstore.*",
+  "sigstore_models.*",
+  "glyph_protocol.*",
+]
+ignore_missing_imports = true

@@ -11,10 +11,10 @@ from __future__ import annotations
 import functools
 import logging
 import threading
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from . import _hermes
-from .bridge import ServerBridge, SyncReport, card_to_schema
+from .bridge import ServerBridge, SyncReport, ToolBinding, card_to_schema
 from .config import GlyphConfig
 
 logger = logging.getLogger("glyphp_hermes.plugin")
@@ -24,7 +24,7 @@ def _safe_callable(fn: Callable[..., object]) -> Callable[..., object]:
     """Normalize any plugin callable to tolerate arbitrary extra kwargs."""
 
     @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> object:
         return fn(*args, **kwargs)
 
     # The wrapped fn itself must already accept **kwargs; this assert keeps us
@@ -37,7 +37,7 @@ def _safe_callable(fn: Callable[..., object]) -> Callable[..., object]:
     )
     if not has_var_kw:
         @functools.wraps(fn)
-        def wrapper(*args, **kwargs):  # noqa: F811 — intentional rebind
+        def wrapper(*args: Any, **kwargs: Any) -> object:  # noqa: F811 — intentional rebind
             accepted = {
                 k: v
                 for k, v in kwargs.items()
@@ -83,8 +83,8 @@ class GlyphRuntime:
                 )
         return reports
 
-    def all_bindings(self) -> dict[str, tuple[ServerBridge, object]]:
-        out = {}
+    def all_bindings(self) -> dict[str, tuple[ServerBridge, ToolBinding]]:
+        out: dict[str, tuple[ServerBridge, ToolBinding]] = {}
         for bridge in self.bridges.values():
             for tool_name, binding in bridge.bindings.items():
                 out[tool_name] = (bridge, binding)
@@ -98,7 +98,7 @@ class GlyphRuntime:
 
     # ---- initial registration (through PluginContext) -------------------------
 
-    def register_tools(self, ctx) -> int:
+    def register_tools(self, ctx: Any) -> int:
         count = 0
         for tool_name, (bridge, binding) in self.all_bindings().items():
             schema = card_to_schema(tool_name, binding.alias, binding.card)
@@ -119,7 +119,7 @@ class GlyphRuntime:
 
     # ---- live reconciliation (resync; same pattern as Hermes' MCP refresh) ----
 
-    def reconcile(self) -> dict:
+    def reconcile(self) -> dict[str, Any]:
         """Re-sync every bridge and reconcile the live registry:
         register new tools, re-register changed ones, deregister removed ones.
         Handlers look bindings up at dispatch time, so updated/blocked states
@@ -132,7 +132,11 @@ class GlyphRuntime:
             added = current - self.registered_tools
             removed = self.registered_tools - current
 
-            results = {"added": [], "removed": [], "kept": len(current & self.registered_tools)}
+            results: dict[str, Any] = {
+                "added": [],
+                "removed": [],
+                "kept": len(current & self.registered_tools),
+            }
             for tool_name in sorted(added):
                 bridge, binding = self.all_bindings()[tool_name]
                 ok = _hermes.register_tool_dynamic(
@@ -153,7 +157,7 @@ class GlyphRuntime:
 
     # ---- hooks -----------------------------------------------------------------
 
-    def on_session_start(self, **_kwargs) -> None:
+    def on_session_start(self, **_kwargs: Any) -> None:
         try:
             self.reconcile()
         except Exception:  # noqa: BLE001 — hooks must never raise into Hermes
@@ -178,7 +182,7 @@ def reset_runtime() -> None:
     _runtime = None
 
 
-def register(ctx) -> None:
+def register(ctx: Any) -> None:
     """Hermes plugin entry point."""
     global _runtime
     from . import cli, commands

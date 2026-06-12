@@ -25,7 +25,7 @@ def check_envelope(envelope: dict, pinned_card: Optional[dict]) -> tuple[bool, d
     receipt = envelope.get("receipt") or {}
     checks = {
         "signature": bool(receipt) and verify_receipt(receipt),
-        "glyphIdMatchesPin": bool(pinned_card)
+        "glyphIdMatchesPin": pinned_card is not None
         and receipt.get("glyphId") == pinned_card.get("id"),
         "outputHashMatches": receipt.get("outputHash")
         == canonical_hash(envelope.get("payload")),

@@ -1,5 +1,11 @@
 # glyphp-hermes
 
+[![CI](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/ci.yml)
+[![hermes-contract](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/hermes-contract.yml/badge.svg)](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/hermes-contract.yml)
+[![attestation-e2e](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/attestation-e2e.yml/badge.svg)](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/attestation-e2e.yml)
+[![Python 3.11–3.13](https://img.shields.io/badge/python-3.11%E2%80%933.13-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Native [Glyph Protocol](https://github.com/Monoperro0207/glyph-protocol) integration for [hermes-agent](https://github.com/NousResearch/hermes-agent).**
 
 Once installed, Hermes consumes Glyph tools with the **full trust chain** —
@@ -93,6 +99,8 @@ natively via the official Python SDK, preserving the proof end to end.
 
 ## Demo (no LLM, no API keys)
 
+![glyphp-hermes demo: discovery, TOFU, confirmation gate, verified receipts, tamper detection, attestation policy](demo/demo.gif)
+
 ```bash
 cd demo && npm install && npm run server     # terminal 1
 python demo/run_demo.py --yes                # terminal 2
@@ -169,12 +177,22 @@ auto-approve. Degraded capabilities are reported in `/glyph status`.
 | Python | 3.11 – 3.13 (matches hermes-agent) |
 | glyph-protocol (PyPI) | ≥ 1.1.0 |
 | Glyph wire protocol | 1.0 |
-| hermes-agent | tested against `main` (see the weekly [hermes-contract](.github/workflows/hermes-contract.yml) workflow — upstream drift turns it red before it reaches you) |
+| hermes-agent | tested against [`db7714d`](https://github.com/NousResearch/hermes-agent/commit/db7714d5f17b1c9d009b8e8211a1e8a005295383) (2026-06-11); the weekly [hermes-contract](.github/workflows/hermes-contract.yml) workflow re-tests against `main` — upstream drift turns it red before it reaches you |
 
-Optional extra: `pip install "glyphp-hermes[sigstore]"` enables real
-Fulcio/Rekor verification of keyless attestations (exercised live in the
-[attestation-e2e](.github/workflows/attestation-e2e.yml) workflow via GitHub
-OIDC — no secrets).
+Optional extra: `pip install "glyphp-hermes[sigstore]"` (sigstore 4.x)
+enables real Fulcio/Rekor verification of keyless attestations — exercised
+live in the [attestation-e2e](.github/workflows/attestation-e2e.yml) workflow
+via GitHub OIDC (no secrets), and offline in normal CI against a recorded
+bundle with a pinned trusted root (`tests/fixtures/sigstore/`).
+
+### Concurrency model
+
+Handlers are synchronous **by design**: Hermes runs the agent turn (and with
+it every tool dispatch) in a worker thread — its gateway wraps blocking work
+in a thread-pool executor, and its own approval prompts block the same way.
+A slow Glyph call therefore never stalls the gateway event loop. Each server
+has a configurable HTTP `timeout_seconds`, and confirmation waits are bounded
+by Hermes' own gateway timeout.
 
 ## Development
 

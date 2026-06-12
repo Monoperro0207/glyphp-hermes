@@ -3,6 +3,10 @@
 # glyph-keyless-v1 bundle bound to a demo card, and verifies it through
 # SigstoreBackend against the live Rekor transparency log. No secrets needed.
 #
+# When tests/fixtures/sigstore/ is missing, this workflow also records it
+# (deterministic card + real bundle + pinned trusted root) and commits it, so
+# normal CI can test the SigstoreBackend accept path offline forever after.
+#
 # Isolated from PR CI on purpose: a transient Fulcio/Rekor outage must not
 # block merges, but a real verification regression stays visible here.
 name: attestation-e2e
@@ -18,7 +22,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write # to commit the recorded offline fixture (once)
 
 jobs:
   e2e:
@@ -31,3 +35,18 @@ jobs:
       - run: pip install -e ".[test,sigstore]"
       - name: Keyless sign + verify round trip
         run: python .github/scripts/attestation_e2e.py
+      - name: Record offline fixture (first successful run only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -f tests/fixtures/sigstore/card.json ]; then
+            echo "fixture already recorded — skipping"
+            exit 0
+          fi
+          python scripts/record_sigstore_fixture.py
+          python -m pytest tests/test_attestation.py -k sigstore_offline -v
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/fixtures/sigstore/
+          git commit -m "test: record offline Sigstore fixture (real bundle + pinned trusted root)"
+          git pull --rebase origin main
+          git push origin main

@@ -11,12 +11,14 @@ process.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from ._version import __version__
 
 __all__ = ["register", "__version__"]
 
 
-def register(ctx) -> None:
+def register(ctx: Any) -> None:
     """Hermes plugin entry point. ``ctx`` is a hermes PluginContext."""
     from .plugin import register as _register
 

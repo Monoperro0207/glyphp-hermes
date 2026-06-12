@@ -15,7 +15,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -245,7 +245,7 @@ class ServerBridge:
         and /glyph trust/revoke take effect on already-registered tools.
         """
 
-        def handler(args: Optional[dict] = None, **_kwargs) -> str:
+        def handler(args: Optional[dict] = None, **_kwargs: Any) -> str:
             args = args or {}
             binding = self.bindings.get(tool_name)
             if binding is None:

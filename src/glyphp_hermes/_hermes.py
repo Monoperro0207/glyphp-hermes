@@ -24,6 +24,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger("glyphp_hermes.hermes")
@@ -73,7 +74,7 @@ def detect_caps(force: bool = False) -> HermesCaps:
             return _caps
         caps = HermesCaps()
         try:
-            import tools.approval as approval  # type: ignore[import-not-found]
+            import tools.approval as approval
 
             caps.available = True
             for attr, target in (
@@ -93,7 +94,7 @@ def detect_caps(force: bool = False) -> HermesCaps:
             caps.missing.append("tools.approval (not inside a Hermes process)")
 
         try:
-            from tools.registry import registry  # type: ignore[import-not-found]
+            from tools.registry import registry
 
             caps.registry_register = getattr(registry, "register", None)
             caps.registry_deregister = getattr(registry, "deregister", None)
@@ -125,9 +126,7 @@ def capability_report() -> dict:
     }
 
 
-def hermes_home():
-    from pathlib import Path
-
+def hermes_home() -> Path:
     try:
         from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
 
@@ -242,11 +241,13 @@ def _gateway_confirmation(
 
     # Tier 1: blocking decision bound to THIS call (what Hermes' own terminal
     # guard does). One-shot by construction.
-    if caps.gateway_tier1:
-        notify_cb = caps.gateway_notify_cbs.get(session_key)
+    notify_cbs = caps.gateway_notify_cbs
+    await_decision = caps.await_gateway_decision
+    if caps.gateway_tier1 and notify_cbs is not None and await_decision is not None:
+        notify_cb = notify_cbs.get(session_key)
         if notify_cb is not None:
             try:
-                outcome = caps.await_gateway_decision(
+                outcome = await_decision(
                     session_key, notify_cb, approval_data, surface="glyph"
                 )
             except Exception:  # noqa: BLE001 — fall through to tier 2
@@ -259,9 +260,10 @@ def _gateway_confirmation(
 
     # Tier 2: queue the request and return; the post_approval_response hook
     # records a one-shot grant and the model retries.
-    if caps.gateway_tier2:
+    submit = caps.submit_pending
+    if caps.gateway_tier2 and submit is not None:
         try:
-            caps.submit_pending(session_key, approval_data)
+            submit(session_key, approval_data)
             return "pending"
         except Exception:  # noqa: BLE001
             logger.exception("submit_pending failed")

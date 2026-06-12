@@ -5,9 +5,13 @@ Handlers return plain strings (gateway-safe) and never raise.
 from __future__ import annotations
 
 import json
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from . import _hermes
+
+if TYPE_CHECKING:
+    from .bridge import ServerBridge, ToolBinding
+    from .plugin import GlyphRuntime
 
 USAGE = (
     "usage: /glyph status | sync | trust <tool> | revoke <tool> [reason] | "
@@ -15,8 +19,8 @@ USAGE = (
 )
 
 
-def make_handler(runtime) -> Callable[..., str]:
-    def handler(args: str = "", **_kwargs) -> str:
+def make_handler(runtime: "GlyphRuntime") -> Callable[..., str]:
+    def handler(args: str = "", **_kwargs: Any) -> str:
         try:
             return _dispatch(runtime, (args or "").strip())
         except Exception as exc:  # noqa: BLE001 — slash commands never raise
@@ -25,7 +29,7 @@ def make_handler(runtime) -> Callable[..., str]:
     return handler
 
 
-def _dispatch(runtime, args: str) -> str:
+def _dispatch(runtime: "GlyphRuntime", args: str) -> str:
     parts = args.split()
     if not parts:
         return USAGE
@@ -47,7 +51,7 @@ def _dispatch(runtime, args: str) -> str:
     return USAGE
 
 
-def _status(runtime) -> str:
+def _status(runtime: "GlyphRuntime") -> str:
     if not runtime.bridges:
         caps = _hermes.capability_report()
         return (
@@ -67,7 +71,7 @@ def _status(runtime) -> str:
     return "\n".join(lines)
 
 
-def _sync(runtime) -> str:
+def _sync(runtime: "GlyphRuntime") -> str:
     results = runtime.reconcile()
     reports = [b.last_report.summary() for b in runtime.bridges.values() if b.last_report]
     extra = []
@@ -78,7 +82,7 @@ def _sync(runtime) -> str:
     return "\n".join(reports + extra) if (reports or extra) else "no servers configured"
 
 
-def _trust(runtime, tool_name: str) -> str:
+def _trust(runtime: "GlyphRuntime", tool_name: str) -> str:
     bridge = runtime.find_bridge_for_tool(tool_name)
     if bridge is None:
         return f"unknown tool {tool_name!r} — run /glyph status to list tools"
@@ -88,14 +92,14 @@ def _trust(runtime, tool_name: str) -> str:
     return (diff_text + "\n" + result) if diff_text else result
 
 
-def _revoke(runtime, tool_name: str, reason: str) -> str:
+def _revoke(runtime: "GlyphRuntime", tool_name: str, reason: str) -> str:
     bridge = runtime.find_bridge_for_tool(tool_name)
     if bridge is None:
         return f"unknown tool {tool_name!r}"
     return bridge.revoke_tool(tool_name, reason)
 
 
-def _diff(runtime, tool_name: str) -> str:
+def _diff(runtime: "GlyphRuntime", tool_name: str) -> str:
     bridge = runtime.find_bridge_for_tool(tool_name)
     if bridge is None:
         return f"unknown tool {tool_name!r}"
@@ -108,7 +112,7 @@ def _diff(runtime, tool_name: str) -> str:
     return f"{tool_name}: no pending changes (state: {binding.blocked_code or 'callable'})"
 
 
-def _render_pending_diff(bridge, binding) -> str:
+def _render_pending_diff(bridge: "ServerBridge", binding: "ToolBinding") -> str:
     pending = bridge.trust.pending().get(binding.glyph_name)
     if not pending:
         return ""
@@ -135,7 +139,7 @@ def _render_diff(diff: dict) -> str:
     return "\n".join(lines) if lines else "  (no field changes)"
 
 
-def _audit(runtime, n: int) -> str:
+def _audit(runtime: "GlyphRuntime", n: int) -> str:
     lines = []
     for bridge in runtime.bridges.values():
         for entry in bridge.audit.tail(n):

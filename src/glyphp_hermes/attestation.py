@@ -211,13 +211,14 @@ class SigstoreBackend:
     ``sigstore sign --bundle``). The signed subject must be the card id
     (the same message the glyph signature covers).
 
-    ``trusted_root`` (optional) pins a Sigstore trusted root for fully
+    ``trusted_root`` (optional) pins a Sigstore trusted root (a
+    ``sigstore.models.TrustedRoot`` or a path to its JSON) for fully
     offline verification — the technique sigstore-python's own tests use.
+    Without it, ``Verifier.production()`` resolves the root via TUF.
     """
 
-    def __init__(self, *, trusted_root: Optional[Any] = None, offline: bool = False) -> None:
+    def __init__(self, *, trusted_root: Optional[Any] = None) -> None:
         self._trusted_root = trusted_root
-        self._offline = offline
 
     def verify_bundle(self, bundle: dict, card: dict) -> dict:
         try:
@@ -241,11 +242,13 @@ class SigstoreBackend:
 
         try:
             if self._trusted_root is not None:
-                from sigstore._internal.trust import TrustedRoot  # noqa: PLC2701
+                from sigstore.models import TrustedRoot
 
                 root = self._trusted_root
                 if not isinstance(root, TrustedRoot):
-                    root = TrustedRoot.from_file(str(root), offline=self._offline)
+                    # from_file never touches the network — this is the
+                    # fully offline path.
+                    root = TrustedRoot.from_file(str(root))
                 verifier = Verifier(trusted_root=root)
             else:
                 verifier = Verifier.production()

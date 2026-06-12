@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
-"""Live Sigstore e2e for the attestation backend (runs in GitHub Actions).
+"""Record the offline Sigstore fixture (runs once, in GitHub Actions).
 
-1. Builds a signed demo glyph card.
-2. Signs the card id keyless via Fulcio using the runner's ambient OIDC token.
-3. Wraps the resulting sigstore bundle in a glyph-keyless-v1 attestation
-   bound to the card (subjectDigest).
-4. Verifies it end-to-end through KeylessVerifier + SigstoreBackend against
-   the live transparency log — must come back trusted=True.
-5. Negative control: the same bundle replayed onto a different card must be
-   rejected on the subject-digest binding.
+Produces ``tests/fixtures/sigstore/`` so the SigstoreBackend accept path can
+be tested deterministically in normal CI, without network or OIDC:
+
+- ``card.json``         deterministic glyph card with a real glyph-keyless-v1
+                        attestation attached (sigstore bundle inside)
+- ``trusted_root.json`` the production Sigstore trusted root, pinned at
+                        recording time (fed to ``TrustedRoot.from_file``)
+- ``identity.json``     the exact issuer/identity the certificate carries,
+                        for the verification policy in tests
+
+The card is deterministic (fixed ed25519 seed, fixed timestamps) so the
+recorded bundle stays bound to the same card id forever. Before writing
+anything, the script re-verifies the whole fixture OFFLINE through
+KeylessVerifier + SigstoreBackend(trusted_root=...) — a fixture that does
+not verify is never written.
+
+Keyless signing needs an ambient OIDC credential, so this only runs inside
+GitHub Actions (the attestation-e2e workflow records and commits the fixture
+automatically when it is missing).
 """
 from __future__ import annotations
 
@@ -16,6 +27,7 @@ import base64
 import hashlib
 import json
 import sys
+from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -24,13 +36,18 @@ from glyph_protocol import canonical_hash
 
 from glyphp_hermes.attestation import KeylessVerifier, SigstoreBackend
 
+FIXTURE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sigstore"
 
-def build_card(name: str) -> dict:
-    priv = Ed25519PrivateKey.generate()
+# Fixture-only key: determinism matters here, secrecy does not.
+_SEED = hashlib.sha256(b"glyphp-hermes sigstore fixture v1").digest()
+
+
+def build_fixture_card() -> dict:
+    priv = Ed25519PrivateKey.from_private_bytes(_SEED)
     base = {
         "version": "1.0.0",
-        "name": name,
-        "intent": "attestation e2e probe",
+        "name": "fixture.probe",
+        "intent": "offline sigstore fixture",
         "tags": [],
         "cost": {
             "latency": "fast",
@@ -84,8 +101,16 @@ def keyless_sign(message: bytes) -> tuple[str, str, str]:
     return bundle.to_json(), token.federated_issuer, token.identity
 
 
+def fetch_trusted_root_json() -> str:
+    from sigstore.models import ClientTrustConfig
+
+    root = ClientTrustConfig.production().trusted_root
+    return root._inner.to_json()  # noqa: SLF001 — only serialization hook exposed
+
+
 def main() -> int:
-    card = build_card("e2e.probe")
+    card = build_fixture_card()
+    print(f"fixture card id: {card['id']}")
 
     try:
         bundle_json, issuer, identity = keyless_sign(card["id"].encode("ascii"))
@@ -106,27 +131,30 @@ def main() -> int:
         "payload": base64.b64encode(json.dumps(keyless_bundle).encode()).decode(),
     }
 
+    trusted_root_json = fetch_trusted_root_json()
+
+    # Self-check: the fixture must verify OFFLINE (pinned root) before it
+    # is allowed to exist.
+    FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+    root_path = FIXTURE_DIR / "trusted_root.json"
+    root_path.write_text(trusted_root_json)
     verifier = KeylessVerifier(
         issuers=[issuer],
         identities=[identity],
-        backend=SigstoreBackend(),
+        backend=SigstoreBackend(trusted_root=root_path),
     )
     outcome = verifier.verify(card)
-    print(f"verify: valid={outcome.valid} trusted={outcome.trusted} error={outcome.error}")
+    print(f"offline verify: valid={outcome.valid} trusted={outcome.trusted} error={outcome.error}")
     if not (outcome.valid and outcome.trusted):
-        print("FAIL: live keyless verification did not come back trusted", file=sys.stderr)
+        root_path.unlink()
+        print("FAIL: fixture does not verify offline — not writing it", file=sys.stderr)
         return 1
 
-    # Negative control: replay onto another card → must fail the binding.
-    other = build_card("e2e.other")
-    other["attestation"] = card["attestation"]
-    replay = verifier.verify(other)
-    if replay.valid:
-        print("FAIL: replayed bundle was accepted on a different card", file=sys.stderr)
-        return 1
-    print("replay onto another card correctly rejected (subject digest binding)")
-
-    print("attestation e2e: OK")
+    (FIXTURE_DIR / "card.json").write_text(json.dumps(card, indent=2) + "\n")
+    (FIXTURE_DIR / "identity.json").write_text(
+        json.dumps({"issuer": issuer, "identity": identity}, indent=2) + "\n"
+    )
+    print(f"fixture recorded in {FIXTURE_DIR}")
     return 0
 
 

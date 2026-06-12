@@ -1,0 +1,45 @@
+# Publishes to PyPI via trusted publishing (OIDC) — no API tokens stored.
+# Requires a one-time setup on pypi.org: add this repo + workflow as a
+# trusted publisher for the project (see RELEASING.md). Until that is done,
+# the publish step fails with a clear "trusted publisher" error and nothing
+# is uploaded.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Full gate before anything ships: tests + lint + types.
+      - run: pip install -e ".[dev,sigstore]"
+      - run: pytest -q
+      - run: ruff check src tests demo scripts .github/scripts
+      - run: mypy
+      - run: pip install build && python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
