@@ -1,0 +1,33 @@
+# Live Sigstore round-trip: uses GitHub Actions' ambient OIDC identity
+# (id-token: write) to do a REAL keyless signature via Fulcio, wraps it in a
+# glyph-keyless-v1 bundle bound to a demo card, and verifies it through
+# SigstoreBackend against the live Rekor transparency log. No secrets needed.
+#
+# Isolated from PR CI on purpose: a transient Fulcio/Rekor outage must not
+# block merges, but a real verification regression stays visible here.
+name: attestation-e2e
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/glyphp_hermes/attestation.py"
+      - ".github/workflows/attestation-e2e.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test,sigstore]"
+      - name: Keyless sign + verify round trip
+        run: python .github/scripts/attestation_e2e.py

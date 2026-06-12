@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glyphp-hermes"
+version = "0.1.0"
+description = "Native Glyph Protocol integration for hermes-agent: signed tool cards, pinning/TOFU, confirmation gates, verified receipts."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11,<3.14"
+authors = [{ name = "MonoPerro" }]
+keywords = ["glyph", "hermes", "agent", "tools", "trust", "ed25519", "receipts"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security :: Cryptography",
+]
+dependencies = [
+  "glyph-protocol>=1.1.0",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "cryptography>=42"]
+sigstore = ["sigstore>=3.0"]
+dev = ["pytest>=8", "cryptography>=42", "ruff>=0.4"]
+
+[project.urls]
+Homepage = "https://github.com/Monoperro0207/glyphp-hermes"
+"Glyph Protocol" = "https://github.com/Monoperro0207/glyph-protocol"
+"Hermes Agent" = "https://github.com/NousResearch/hermes-agent"
+
+[project.entry-points."hermes_agent.plugins"]
+glyph = "glyphp_hermes"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+glyphp_hermes = ["plugin.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "hermes_upstream: contract tests against a live hermes-agent checkout (skipped unless hermes-agent is importable)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

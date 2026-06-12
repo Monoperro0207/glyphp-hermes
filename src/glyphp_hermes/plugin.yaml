@@ -1,0 +1,9 @@
+name: glyph
+version: 0.1.0
+description: "Native Glyph Protocol integration — signed tool cards, pinning/TOFU, confirmation gates, verified receipts."
+author: "glyphp-hermes"
+kind: standalone
+provides_tools: []
+provides_hooks:
+  - on_session_start
+  - post_approval_response

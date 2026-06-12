@@ -1,0 +1,34 @@
+# Upstream-drift detector: asserts the exact hermes-agent symbols this plugin
+# touches (PluginContext registrars, registry register/deregister/dispatch,
+# tools.approval seams, VALID_HOOKS). If hermes-agent@main renames anything,
+# this goes red BEFORE a user hits it — fix glyphp_hermes/_hermes.py.
+name: hermes-contract
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/glyphp_hermes/_hermes.py"
+      - "tests/test_hermes_contract.py"
+      - ".github/workflows/hermes-contract.yml"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clone hermes-agent@main
+        run: git clone --depth 1 https://github.com/NousResearch/hermes-agent /tmp/hermes-agent
+      - name: Install hermes-agent + plugin
+        run: |
+          pip install -e ".[test]"
+          pip install -e /tmp/hermes-agent
+      - name: Run upstream contract tests
+        run: pytest tests/test_hermes_contract.py -v -m hermes_upstream
+        env:
+          PYTHONPATH: /tmp/hermes-agent
