@@ -1,0 +1,4 @@
+{
+  "issuer": "https://token.actions.githubusercontent.com",
+  "identity": "https://github.com/Monoperro0207/glyphp-hermes/.github/workflows/attestation-e2e.yml@refs/heads/main"
+}
