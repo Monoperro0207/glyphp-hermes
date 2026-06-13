@@ -21,10 +21,22 @@ RISK_ORDER = {"safe": 0, "caution": 1, "danger": 2}
 _ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
+def hermes_home() -> Path:
+    """Hermes' own home dir (``~/.hermes`` by default; ``HERMES_HOME`` wins).
+
+    The same isolation knob hermes-agent itself uses. ``config.yaml`` (Hermes'
+    config, with the ``plugins.enabled`` allow-list) lives directly here."""
+    return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+
+
+def hermes_config_path() -> Path:
+    """Hermes' config file — distinct from this plugin's ``glyph.yaml``."""
+    return hermes_home() / "config.yaml"
+
+
 def glyph_home() -> Path:
     """Root for all plugin state (config, pins, audit logs, pending queues)."""
-    home = os.environ.get("HERMES_HOME", "~/.hermes")
-    return Path(home).expanduser() / "glyph"
+    return hermes_home() / "glyph"
 
 
 def config_path() -> Path:

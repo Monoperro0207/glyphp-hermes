@@ -40,23 +40,24 @@ not a lossy bridge:
 ```bash
 # in the environment where hermes-agent runs
 pip install glyphp-hermes
+glyphp-hermes enable        # enable the plugin in ~/.hermes/config.yaml
+# restart Hermes, then:
+glyphp-hermes status        # confirm it is installed + enabled
 ```
 
-Entry-point plugins are opt-in. Enable `glyph` by adding it to
-`~/.hermes/config.yaml`:
+`glyphp-hermes enable` adds `glyph` to the `plugins.enabled` allow-list in
+`~/.hermes/config.yaml` — the opt-in the Hermes loader honors. It is
+idempotent, creates the file if missing, and preserves the rest of your
+config verbatim (backup at `config.yaml.bak`).
 
-```yaml
-plugins:
-  enabled:
-    - glyph
-```
-
-> `hermes plugins enable glyph` does not (yet) discover pip entry-point
-> plugins on hermes-agent main — its discovery only scans bundled and
-> `~/.hermes/plugins/` directories, while the plugin *loader* fully supports
-> entry-points gated on `plugins.enabled`. The config edit above is the
-> supported path; alternatively copy `src/glyphp_hermes/` to
-> `~/.hermes/plugins/glyph/` (folder install) and `hermes plugins enable
+> Why a dedicated command: `hermes plugins enable glyph` does not (yet)
+> discover pip entry-point plugins on hermes-agent main — its discovery only
+> scans bundled and `~/.hermes/plugins/` directories, while the plugin
+> *loader* fully supports entry-points gated on `plugins.enabled` (so
+> `hermes plugins list` won't show the plugin either — use `glyphp-hermes
+> status`). Manual alternatives: edit `~/.hermes/config.yaml` by hand
+> (`plugins.enabled: [glyph]`), or copy `src/glyphp_hermes/` to
+> `~/.hermes/plugins/glyph/` (folder install) where `hermes plugins enable
 > glyph` works as usual.
 
 Then register a Glyph server and go:

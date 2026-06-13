@@ -2,8 +2,17 @@
 
 ## 0.1.0
 
-Initial release. Includes the fixes from the 2026-06-12 isolated audit
-(sandboxed adversarial review against commit d7d4423):
+Frictionless install: a `glyphp-hermes` console script with
+`enable` / `disable` / `status`. `glyphp-hermes enable` adds `glyph` to the
+`plugins.enabled` allow-list in `~/.hermes/config.yaml` — the opt-in the
+Hermes loader honors — idempotently, creating the file if missing and
+preserving the rest of the config verbatim (backup at `config.yaml.bak`).
+Works around the Hermes CLI-discovery gap where `hermes plugins enable`
+doesn't see pip entry-point plugins; `glyphp-hermes status` verifies the
+install since `hermes plugins list` won't show it either.
+
+Includes the fixes from the 2026-06-12 isolated audit (sandboxed adversarial
+review against commit d7d4423):
 
 - **Receipt key pinning (high)**: `check_envelope` now requires the
   receipt's `serverPublicKey` to equal the pinned card's key — a

@@ -9,26 +9,27 @@ exercises it both without and with an LLM.
 ```bash
 # inside the virtualenv / uv env where hermes-agent runs:
 pip install glyphp-hermes          # or: pip install -e /path/to/glyphp-hermes
+glyphp-hermes enable               # add glyph to ~/.hermes/config.yaml (idempotent, backs up)
+# restart Hermes, then:
+glyphp-hermes status               # confirm it is installed + enabled
 ```
 
 Entry-point plugins are opt-in, gated on `plugins.enabled` in
-`~/.hermes/config.yaml` — add:
+`~/.hermes/config.yaml`. `glyphp-hermes enable` writes exactly that — it
+creates the file if missing, is a no-op if `glyph` is already listed, and
+preserves the rest of your config verbatim (backing it up to
+`config.yaml.bak`). It exists because `hermes plugins enable glyph` only
+discovers directory-installed plugins, not pip entry-points (a Hermes
+CLI-discovery gap — see
+[docs/upstream/issue-plugins-enable-entrypoints.md](../docs/upstream/issue-plugins-enable-entrypoints.md)).
+For the same reason `hermes plugins list` won't show the plugin; use
+`glyphp-hermes status` (or `hermes glyph list` once loaded) to verify instead.
 
-```yaml
-plugins:
-  enabled:
-    - glyph
-```
-
-(`hermes plugins enable glyph` currently only discovers directory-installed
-plugins, not pip entry-points, so edit the config directly.)
-
-Verify: `hermes glyph list` answers (the CLI subcommand only exists if the
-plugin loaded).
-
-> Folder-install alternative (no pip): copy `src/glyphp_hermes/` to
-> `~/.hermes/plugins/glyph/` — `plugin.yaml` ships inside the package — and
-> then `hermes plugins enable glyph` works as usual.
+> Manual / folder-install alternatives (no console script):
+> - edit `~/.hermes/config.yaml` by hand with the `plugins.enabled: [glyph]`
+>   block above; or
+> - copy `src/glyphp_hermes/` to `~/.hermes/plugins/glyph/` — `plugin.yaml`
+>   ships inside the package — and then `hermes plugins enable glyph` works.
 
 ## 2. Start the demo Glyph server
 

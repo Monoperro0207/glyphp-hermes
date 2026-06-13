@@ -39,6 +39,9 @@ Homepage = "https://github.com/Monoperro0207/glyphp-hermes"
 [project.entry-points."hermes_agent.plugins"]
 glyph = "glyphp_hermes"
 
+[project.scripts]
+glyphp-hermes = "glyphp_hermes.setup:main"
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 
