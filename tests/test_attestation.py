@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from glyphp_hermes.attestation import (
     DigestVerifier,
     KeylessVerifier,
     SigstoreBackend,
+    compute_keyless_subject_digest,
     default_registry,
     enforce_policy,
     matches_any,
@@ -30,7 +30,7 @@ def keyless_bundle_for(card: dict, *, issuer="https://token.actions.githubuserco
                        identity="repo:acme/tools:ref:refs/heads/main", **extra) -> dict:
     bundle = {
         "bundleVersion": "glyph-keyless-v1",
-        "subjectDigest": hashlib.sha256(card["id"].encode()).hexdigest(),
+        "subjectDigest": compute_keyless_subject_digest(card),
         "issuer": issuer,
         "identity": identity,
         **extra,
@@ -39,26 +39,22 @@ def keyless_bundle_for(card: dict, *, issuer="https://token.actions.githubuserco
 
 
 def attach_keyless(priv, bundle_mutator=None, **card_kwargs) -> dict:
-    """Build a card whose attestation slot carries a keyless bundle bound to it.
+    """Build a card carrying a keyless bundle bound to its content (RFC-0007).
 
-    The attestation is part of the signed content, so we build the card twice:
-    once to learn the id, then re-issue with the bundle (whose subjectDigest
-    must commit to the *final* id). To keep the fixture simple we bind the
-    bundle to the final card id by iterating: build with placeholder, compute
-    binding, rebuild, and patch the bundle to the new id.
+    The bundle's subjectDigest commits to the **attestation-exclusive** content
+    (a probe card without the attestation), and the FINAL card id includes the
+    attestation — the real producer shape, where the id contains the very
+    bundle that binds it. The result therefore passes both verify_glyph and the
+    keyless subject binding (belt-and-suspenders, RFC-0007 §3.2).
     """
-    # Build the card with a placeholder attestation payload first.
-    placeholder = {"type": "glyph-keyless-v1", "payload": ""}
-    card = build_card(priv, attestation=placeholder, **card_kwargs)
-    bundle = keyless_bundle_for(card)
+    probe = build_card(priv, **card_kwargs)  # attestation-exclusive content
+    bundle = keyless_bundle_for(probe)
     if bundle_mutator:
-        bundle_mutator(bundle, card)
+        bundle_mutator(bundle, probe)
     payload = base64.b64encode(json.dumps(bundle).encode()).decode()
-    # Patch attestation in place: the card id no longer matches, but the
-    # KeylessVerifier only checks bundle↔id binding, which is what we want
-    # to exercise. (Card signature checks are TrustManager's job.)
-    card["attestation"] = {"type": "glyph-keyless-v1", "payload": payload}
-    return card
+    attestation = {"type": "glyph-keyless-v1", "payload": payload}
+    # Re-issue with the attestation present: the final id covers it.
+    return build_card(priv, attestation=attestation, **card_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +146,40 @@ def test_keyless_subject_digest_binding_tamper(priv):
         bundle["subjectDigest"] = "0" * 64  # replayed onto another card
 
     card = attach_keyless(priv, bundle_mutator=reseat)
+    result = KeylessVerifier().verify(card)
+    assert result.valid is False
+    assert "subject digest" in result.error
+
+
+def test_keyless_subject_digest_is_attestation_exclusive(priv):
+    """RFC-0007 §3.1: the digest commits to the card content WITHOUT the
+    attestation slot, so it is invariant to attaching the bundle. A card whose
+    final id includes the attestation still verifies — the case that the old
+    sha256(card.id) binding could never satisfy (fixed-point)."""
+    from glyph_protocol import verify_glyph
+
+    card = attach_keyless(priv)
+    # The final id covers the attestation (real producer shape), yet the
+    # bundle's subjectDigest is computed over the attestation-exclusive content.
+    bundle = json.loads(base64.b64decode(card["attestation"]["payload"]))
+    assert bundle["subjectDigest"] == compute_keyless_subject_digest(card)
+    # Belt-and-suspenders: the same card passes the ed25519 content check too.
+    assert verify_glyph(card) is True
+    result = KeylessVerifier().verify(card)
+    assert result.valid is True
+
+
+def test_keyless_naive_id_binding_is_rejected(priv):
+    """A bundle that (wrongly) commits to sha256(final card.id) — the pre-fix
+    definition — must NOT verify, since the id includes the attestation."""
+    import hashlib
+
+    def naive(bundle, card):
+        # `card` here is the attestation-exclusive probe; emulate the old bug by
+        # binding to a digest of an id that would include the attestation.
+        bundle["subjectDigest"] = hashlib.sha256(b"id-including-attestation").hexdigest()
+
+    card = attach_keyless(priv, bundle_mutator=naive)
     result = KeylessVerifier().verify(card)
     assert result.valid is False
     assert "subject digest" in result.error

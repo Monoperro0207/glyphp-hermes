@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import sys
 
@@ -22,7 +21,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from glyph_protocol import canonical_hash
 
-from glyphp_hermes.attestation import KeylessVerifier, SigstoreBackend
+from glyphp_hermes.attestation import (
+    KeylessVerifier,
+    SigstoreBackend,
+    compute_keyless_subject_digest,
+)
 
 
 def build_card(name: str) -> dict:
@@ -106,7 +109,7 @@ def main() -> int:
 
     keyless_bundle = {
         "bundleVersion": "glyph-keyless-v1",
-        "subjectDigest": hashlib.sha256(card["id"].encode()).hexdigest(),
+        "subjectDigest": compute_keyless_subject_digest(card),
         "issuer": issuer,
         "identity": identity,
         "signingCertificate": bundle_json,

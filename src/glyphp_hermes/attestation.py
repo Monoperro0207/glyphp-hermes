@@ -24,12 +24,61 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
+from glyph_protocol import canonical_hash
+
+try:  # the canonical implementation, once the SDK ships it (RFC-0007 §3.1)
+    from glyph_protocol import compute_keyless_subject_digest as _sdk_subject_digest
+except ImportError:  # published glyph-protocol predates the helper — local port below
+    _sdk_subject_digest = None
+
 KEYLESS_TYPE = "glyph-keyless-v1"
 DIGEST_TYPE = "container-digest"
 
 _DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 SEGMENT_DELIMITERS = {":", "/"}
+
+# Canonical card fields that enter the content-addressed id (mirror of
+# @glyphp/core CANONICAL_FIELDS / glyph_protocol._CARD_CANONICAL_FIELDS). The
+# SDK is the source of truth; this list only feeds the local fallback below.
+_CARD_CANONICAL_FIELDS = (
+    "version",
+    "name",
+    "intent",
+    "tags",
+    "cost",
+    "idempotent",
+    "input",
+    "output",
+    "examples",
+    "failureModes",
+    "provider",
+    "requiredScopes",
+    "attestation",
+)
+
+
+def compute_keyless_subject_digest(card: dict) -> str:
+    """SHA-256 (hex) of the card's **attestation-exclusive** canonical id.
+
+    The digest a ``glyph-keyless-v1`` bundle commits to (RFC-0007 §3.1). The
+    bundle rides inside ``card['attestation']``, which itself enters the final
+    ``card['id']``, so it cannot commit to ``sha256(card['id'])`` — it commits
+    to the id computed with the attestation slot absent (mirroring how the
+    ed25519 path signs an id that excludes ``signature``). For a card without
+    an attestation this equals ``sha256(card['id'])``.
+
+    Prefers ``glyph_protocol``'s implementation when present; otherwise a local
+    port kept byte-identical to it.
+    """
+    if _sdk_subject_digest is not None:
+        return _sdk_subject_digest(card)
+    picked = {
+        f: card.get(f)
+        for f in _CARD_CANONICAL_FIELDS
+        if f in card and f != "attestation"
+    }
+    return hashlib.sha256(canonical_hash(picked).encode("ascii")).hexdigest()
 
 
 @dataclass
@@ -170,11 +219,15 @@ class KeylessVerifier:
                 valid=False, type=self.type, error="unsupported or incomplete bundle"
             )
 
-        # Subject binding — the bundle must commit to THIS card's id (§4.2.1).
-        expected = hashlib.sha256(str(card.get("id", "")).encode("utf-8")).hexdigest()
+        # Subject binding — the bundle commits to THIS card's content: the
+        # attestation-exclusive canonical id (RFC-0007 §3.1/§4.2.1). Recomputed
+        # from the card, never read from card['id']: the bundle lives inside
+        # the attestation slot, so it cannot commit to the final id that
+        # contains it (card['id']'s own integrity is verify_glyph's job).
+        expected = compute_keyless_subject_digest(card)
         if bundle["subjectDigest"] != expected:
             return AttestationResult(
-                valid=False, type=self.type, error="subject digest does not match card id"
+                valid=False, type=self.type, error="subject digest does not match card content"
             )
 
         issuer = str(bundle.get("issuer", ""))

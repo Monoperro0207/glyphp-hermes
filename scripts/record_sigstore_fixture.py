@@ -34,7 +34,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from glyph_protocol import canonical_hash
 
-from glyphp_hermes.attestation import KeylessVerifier, SigstoreBackend
+from glyphp_hermes.attestation import (
+    KeylessVerifier,
+    SigstoreBackend,
+    compute_keyless_subject_digest,
+)
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sigstore"
 
@@ -131,7 +135,7 @@ def main() -> int:
 
     keyless_bundle = {
         "bundleVersion": "glyph-keyless-v1",
-        "subjectDigest": hashlib.sha256(card["id"].encode()).hexdigest(),
+        "subjectDigest": compute_keyless_subject_digest(card),
         "issuer": issuer,
         "identity": identity,
         "signingCertificate": bundle_json,
