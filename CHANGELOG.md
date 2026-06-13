@@ -12,9 +12,9 @@ doesn't see pip entry-point plugins; `glyphp-hermes status` verifies the
 install since `hermes plugins list` won't show it either.
 
 RFC-0007 subject-digest fix: keyless verification now binds the bundle to the
-card's **attestation-exclusive** canonical id (`compute_keyless_subject_digest`,
-prefers `glyph_protocol`'s implementation when present, local port otherwise)
-instead of `sha256(card.id)`. The bundle rides inside `card.attestation`, which
+card's **attestation-exclusive** canonical id via `glyph_protocol`'s
+`compute_keyless_subject_digest` (requires `glyph-protocol>=1.2.0`) instead of
+`sha256(card.id)`. The bundle rides inside `card.attestation`, which
 enters the final id, so the old binding was a fixed point no real keyless card
 could satisfy; a card whose id includes the attestation now passes both
 `verify_glyph` and the subject binding. The recorded Sigstore fixture verifies
