@@ -7,7 +7,7 @@ name = "glyphp-hermes"
 version = "0.1.0"
 description = "Native Glyph Protocol integration for hermes-agent: signed tool cards, pinning/TOFU, confirmation gates, verified receipts."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
 authors = [{ name = "MonoPerro" }]
 keywords = ["glyph", "hermes", "agent", "tools", "trust", "ed25519", "receipts"]

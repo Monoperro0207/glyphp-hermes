@@ -4,7 +4,7 @@
 [![hermes-contract](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/hermes-contract.yml/badge.svg)](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/hermes-contract.yml)
 [![attestation-e2e](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/attestation-e2e.yml/badge.svg)](https://github.com/Monoperro0207/glyphp-hermes/actions/workflows/attestation-e2e.yml)
 [![Python 3.11–3.13](https://img.shields.io/badge/python-3.11%E2%80%933.13-blue)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 **Native [Glyph Protocol](https://github.com/Monoperro0207/glyph-protocol) integration for [hermes-agent](https://github.com/NousResearch/hermes-agent).**
 
@@ -211,4 +211,5 @@ a fresh hermes-agent clone.
 
 ## License
 
-MIT
+Apache-2.0 — same as Glyph Protocol, for its explicit patent grant. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
