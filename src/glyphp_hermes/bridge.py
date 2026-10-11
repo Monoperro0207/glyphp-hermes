@@ -300,12 +300,13 @@ class ServerBridge:
                     return token_or_error
                 confirmation_token = token_or_error if token_or_error else None
 
+            call_id = str(uuid.uuid4())
             try:
                 envelope = self.client.call(
                     binding.glyph_name,
                     args,
                     confirmation_token=confirmation_token,
-                    call_id=str(uuid.uuid4()),
+                    call_id=call_id,
                 )
             except httpx.HTTPStatusError as exc:
                 parsed = parse_glyph_error(exc)
@@ -317,7 +318,7 @@ class ServerBridge:
                     "SERVER_UNREACHABLE", f"Glyph server {self.cfg.url} unreachable: {exc}"
                 )
 
-            return self._seal(binding, args, envelope)
+            return self._seal(binding, args, envelope, call_id)
 
         handler.__name__ = f"glyph_handler_{tool_name}"
         return handler
@@ -370,13 +371,13 @@ class ServerBridge:
             tool=binding.tool_name,
         )
 
-    def _seal(self, binding: ToolBinding, args: dict, envelope: dict) -> str:
+    def _seal(self, binding: ToolBinding, args: dict, envelope: dict, call_id: str) -> str:
         pinned = self.trust.store.get(binding.glyph_name)
         pinned_card = pinned.card if pinned else binding.card
         verified = True
         checks: dict = {}
         if self.cfg.receipts.verify:
-            verified, checks = check_envelope(envelope, pinned_card)
+            verified, checks = check_envelope(envelope, pinned_card, call_id)
 
         self.audit.record(
             alias=binding.alias,

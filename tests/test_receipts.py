@@ -27,6 +27,7 @@ def test_successful_call_appends_verified_audit_entry(bridge, tmp_path):
         "glyphIdMatchesPin": True,
         "outputHashMatches": True,
         "inspectionHashMatches": True,
+        "callIdMatches": True,
     }
     assert entry["pinnedPublicKey"] == entry["receipt"]["serverPublicKey"]
     assert entry["receipt"]["outputHash"] == out["receipt"]["outputHash"]
@@ -47,6 +48,35 @@ def test_tampered_receipt_blocks_payload(server, tmp_path, confirmer):
         assert entry["checks"]["signature"] is False
     finally:
         server.tamper_receipts(False)
+        bridge.close()
+
+
+def test_replayed_envelope_blocks_payload(server, tmp_path, confirmer):
+    # A MITM records the first response and answers the next call with it.
+    bridge = make_bridge(server, tmp_path, confirmer)
+    bridge.sync()
+    real_call = bridge.client.call
+    recorded: list[dict] = []
+
+    def replaying(name, args, **kwargs):
+        if not recorded:
+            recorded.append(real_call(name, args, **kwargs))
+        return recorded[0]
+
+    bridge.client.call = replaying
+    try:
+        handler = bridge.make_handler("glyph_demo_echo")
+        first = json.loads(handler({"x": 1}))
+        assert first["ok"] is True and first["result"] == {"echo": {"x": 1}}
+
+        out = json.loads(handler({"x": 2}))
+        assert out["ok"] is False
+        assert out["error"]["code"] == "RECEIPT_INVALID"
+        assert "result" not in out  # the stale payload is withheld
+        entry = ReceiptAuditLog(tmp_path / "audit.jsonl").tail()[-1]
+        assert entry["verified"] is False
+        assert [k for k, v in entry["checks"].items() if not v] == ["callIdMatches"]
+    finally:
         bridge.close()
 
 
