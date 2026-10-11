@@ -20,6 +20,13 @@ could satisfy; a card whose id includes the attestation now passes both
 `verify_glyph` and the subject binding. The recorded Sigstore fixture verifies
 unchanged.
 
+Receipt call binding: `check_envelope` now takes the `callId` the plugin sent
+and requires the receipt to echo it (`clientCallId`, or `callId` on a 0.2
+receipt). Before this, a genuine envelope recorded from an earlier call of the
+same tool passed all five checks and could be replayed in place of the real
+response. A server that signs receipts but does not echo the client `callId`
+now fails verification (`receipts.on_failure` decides block or warn).
+
 Includes the fixes from the 2026-06-12 isolated audit (sandboxed adversarial
 review against commit d7d4423):
 

@@ -27,10 +27,11 @@ not a lossy bridge:
   (Telegram/Slack gateway). Approvals are **one-shot**: bound to the exact
   tool + input, consumed on use, never session-persisted.
 - 🧾 **Verified receipts as audit evidence.** Every call's signed receipt is
-  verified with five checks (signed by the **pinned** key, signature, card
-  binding, payload hash, inspection hash) and appended to a JSONL audit log
-  you can re-verify offline at any time. A payload or inspection tampered in
-  transit — or a receipt signed by any key other than the pin — is withheld.
+  verified with six checks (signed by the **pinned** key, signature, card
+  binding, payload hash, inspection hash, call binding) and appended to a
+  JSONL audit log you can re-verify offline at any time. A payload or
+  inspection tampered in transit, a receipt signed by any key other than the
+  pin, or a genuine response replayed from an earlier call is withheld.
 - 📜 **Attestation policy.** Optionally require supply-chain attestations
   (`container-digest`, RFC-0007 `glyph-keyless-v1`/Sigstore) for danger-tier
   or all tools — mirroring `@glyphp/client`'s `requireAttestation`.

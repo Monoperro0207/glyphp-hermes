@@ -15,18 +15,22 @@ from glyphp_hermes.errors import parse_glyph_error, tool_error
 from .cardlab import build_card, build_receipt
 
 
+CALL_ID = "call-under-test"
+
+
 @pytest.fixture
 def priv():
     return Ed25519PrivateKey.generate()
 
 
-def _envelope(priv, card, payload):
+def _envelope(priv, card, payload, client_call_id=CALL_ID):
     receipt = build_receipt(
         priv,
         glyph_id=card["id"],
         glyph_name=card["name"],
         input_hash=canonical_hash({}),
         output_hash=canonical_hash(payload),
+        client_call_id=client_call_id,
     )
     return {"payload": payload, "receipt": receipt, "inspection": {"modified": False, "findings": []}}
 
@@ -34,7 +38,7 @@ def _envelope(priv, card, payload):
 def test_check_envelope_all_green(priv):
     card = build_card(priv)
     envelope = _envelope(priv, card, {"result": 42})
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is True
     assert checks == {
         "keyMatchesPin": True,
@@ -42,6 +46,7 @@ def test_check_envelope_all_green(priv):
         "glyphIdMatchesPin": True,
         "outputHashMatches": True,
         "inspectionHashMatches": True,
+        "callIdMatches": True,
     }
 
 
@@ -49,7 +54,7 @@ def test_check_envelope_bad_signature(priv):
     card = build_card(priv)
     envelope = _envelope(priv, card, {"result": 42})
     envelope["receipt"]["signature"] = "00" * 64
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False and checks["signature"] is False
 
 
@@ -57,7 +62,7 @@ def test_check_envelope_wrong_glyph_id(priv):
     card = build_card(priv)
     other = build_card(priv, name="other", intent="different")
     envelope = _envelope(priv, other, {"result": 42})
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False and checks["glyphIdMatchesPin"] is False
 
 
@@ -66,7 +71,7 @@ def test_check_envelope_payload_substitution(priv):
     card = build_card(priv)
     envelope = _envelope(priv, card, {"result": 42})
     envelope["payload"] = {"result": "swapped"}
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False and checks["outputHashMatches"] is False
     assert checks["signature"] is True  # the receipt itself is intact
 
@@ -84,13 +89,14 @@ def test_check_envelope_key_substitution(priv):
         glyph_name=card["name"],
         input_hash=canonical_hash({}),
         output_hash=canonical_hash(payload),
+        client_call_id=CALL_ID,
     )
     envelope = {
         "payload": payload,
         "receipt": forged,
         "inspection": {"modified": False, "findings": []},
     }
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False
     assert checks["keyMatchesPin"] is False
     assert checks["signature"] is True  # self-consistent, hence the pin check
@@ -102,7 +108,7 @@ def test_check_envelope_inspection_substitution(priv):
     card = build_card(priv)
     envelope = _envelope(priv, card, {"result": 42})
     envelope["inspection"] = {"modified": True, "findings": []}
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False and checks["inspectionHashMatches"] is False
     assert checks["signature"] is True
 
@@ -116,8 +122,45 @@ def test_check_envelope_missing_inspection_hash_fails_closed(priv):
     base = {k: v for k, v in receipt.items() if k != "signature"}
     receipt = {**base, "signature": sign(priv, canonical_hash(base))}
     envelope["receipt"] = receipt
-    ok, checks = check_envelope(envelope, card)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
     assert ok is False and checks["inspectionHashMatches"] is False
+
+
+def test_check_envelope_replayed_envelope(priv):
+    # Adversarial: a genuine envelope recorded from an EARLIER call of the
+    # same tool. Pinned key, valid signature, consistent hashes — but it
+    # answers a different callId than the one we just sent.
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42}, client_call_id="an-earlier-call")
+    ok, checks = check_envelope(envelope, card, CALL_ID)
+    assert ok is False and checks["callIdMatches"] is False
+    assert all(v for k, v in checks.items() if k != "callIdMatches")
+
+
+def test_check_envelope_receipt_without_call_id_echo_fails_closed(priv):
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42}, client_call_id=None)
+    ok, checks = check_envelope(envelope, card, CALL_ID)
+    assert ok is False and checks["callIdMatches"] is False
+
+
+def test_check_envelope_without_sent_call_id_fails_closed(priv):
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42})
+    ok, checks = check_envelope(envelope, card, None)
+    assert ok is False and checks["callIdMatches"] is False
+
+
+def test_check_envelope_accepts_02_receipt_echoing_call_id(priv):
+    # Receipt 0.2 had no clientCallId: the client's id rode in callId itself.
+    from .cardlab import sign
+    card = build_card(priv)
+    envelope = _envelope(priv, card, {"result": 42}, client_call_id=None)
+    base = {k: v for k, v in envelope["receipt"].items() if k != "signature"}
+    base.update({"receiptVersion": "0.2", "callId": CALL_ID})
+    envelope["receipt"] = {**base, "signature": sign(priv, canonical_hash(base))}
+    ok, checks = check_envelope(envelope, card, CALL_ID)
+    assert ok is True and checks["callIdMatches"] is True
 
 
 def test_audit_log_record_and_tail(tmp_path, priv):
@@ -125,7 +168,7 @@ def test_audit_log_record_and_tail(tmp_path, priv):
     card = build_card(priv)
     for i in range(3):
         envelope = _envelope(priv, card, {"i": i})
-        ok, checks = check_envelope(envelope, card)
+        ok, checks = check_envelope(envelope, card, CALL_ID)
         log.record(
             alias="demo",
             glyph_name="echo",
@@ -150,7 +193,7 @@ def test_audit_verify_all_detects_tamper(tmp_path, priv):
     bad = _envelope(priv, card, {"ok": 2})
     bad["receipt"]["signature"] = "00" * 64
     for envelope in (good, bad):
-        ok, checks = check_envelope(envelope, card)
+        ok, checks = check_envelope(envelope, card, CALL_ID)
         log.record(
             alias="demo", glyph_name="echo", tool_name="t",
             envelope=envelope, verified=ok, checks=checks, input_value={},

@@ -14,20 +14,28 @@ from typing import Any, Optional
 from glyph_protocol import canonical_hash, verify_receipt
 
 
-def check_envelope(envelope: dict, pinned_card: Optional[dict]) -> tuple[bool, dict]:
-    """Verify a SealedEnvelope against the pinned card.
+def check_envelope(
+    envelope: dict, pinned_card: Optional[dict], call_id: Optional[str]
+) -> tuple[bool, dict]:
+    """Verify a SealedEnvelope against the pinned card and the call it answers.
 
-    Five checks, mirroring GlyphClient.verifyReceipt in the official TS
+    Six checks, mirroring GlyphClient.verifyReceipt in the official TS
     client (packages/client/src/index.ts):
       1. the receipt is signed by the PINNED key — not whatever key the
          receipt itself names (a self-chosen key proves nothing),
       2. the receipt signature verifies under that key,
       3. the receipt is bound to the card we approved (glyphId == pin id),
       4. the receipt's outputHash matches the payload we actually received,
-      5. the receipt's inspectionHash matches the inspection we received.
+      5. the receipt's inspectionHash matches the inspection we received,
+      6. the receipt echoes the callId WE sent (``clientCallId``, or
+         ``callId`` on a 0.2 receipt) — otherwise a genuine envelope recorded
+         from an earlier call of the same tool could be replayed.
     """
     receipt = envelope.get("receipt") or {}
     inspection = envelope.get("inspection")
+    echoed_call_id = receipt.get("clientCallId")
+    if echoed_call_id is None:
+        echoed_call_id = receipt.get("callId")
     checks = {
         "keyMatchesPin": pinned_card is not None
         and bool(receipt.get("serverPublicKey"))
@@ -39,6 +47,7 @@ def check_envelope(envelope: dict, pinned_card: Optional[dict]) -> tuple[bool, d
         == canonical_hash(envelope.get("payload")),
         "inspectionHashMatches": receipt.get("inspectionHash")
         == canonical_hash(inspection if inspection is not None else {}),
+        "callIdMatches": bool(call_id) and echoed_call_id == call_id,
     }
     return all(checks.values()), checks
 
